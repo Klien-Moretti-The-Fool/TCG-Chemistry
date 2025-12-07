@@ -5,7 +5,971 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My GitHub Game</title>
     <style>
-        /* CSS: This makes the game look good */
+        /* CSS: This makes the game look good */import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  Beaker, Zap, Heart, Flame, Shield, BookOpen, 
+  Eye, EyeOff, FlaskConical, X, ArrowDownToLine,
+  Trophy, Crown, AlertTriangle, Atom, Lightbulb, CheckCircle, Activity, Target, Recycle,
+  Microscope, Info, ArrowLeft
+} from 'lucide-react';
+
+// --- 1. TYPES ---
+
+type CardType = 'Element' | 'Sintesis' | 'Taktikal' | 'Garam' | 'Trap';
+
+interface Card { 
+  id: string; 
+  name: string; 
+  type: CardType; 
+  sintesisType?: 'Asid' | 'Bes' | 'Neutral'; 
+  formula?: string; 
+  symbol?: string; 
+  description: string; 
+  effect?: string; 
+  scientificJustification?: string; 
+  // New Educational Fields
+  molecularStructure?: string;
+  dailyUsage?: string;
+  
+  eCost: number; 
+  mCost?: number; 
+  power?: number; 
+  tier?: number; 
+  rarity?: 'Biasa' | 'Tidak Biasa' | 'Langka'; 
+  pH?: number;
+  requirements?: { element: string; count: number }[]; 
+  source?: string; 
+}
+
+interface Player { id: string; name: string; hp: number; maxHP: number; currentE: number; maxE: number; currentM: number; maxM: number; hand: Card[]; makmal: Card[]; synthesisZone: Card[]; bukuFormula: Card[]; timbunanBuang: Card[]; statusEffects: any[]; deck: Card[]; trapSlot: Card | null; }
+interface GameState { currentPlayer: 'player1' | 'player2'; player1: Player; player2: Player; turnNumber: number; winner?: 'player1' | 'player2'; gameLog: string[]; activeVisualEffects: VisualEffect[]; makmalPH: number; }
+interface VisualEffect { id: string; type: 'synthesis' | 'damage' | 'heal' | 'info'; description: string; }
+
+// --- 2. DATA: KAD & CONSTANTS ---
+
+const PH_COLOR_MAP = [
+  { max: 2.0, color: '#EF4444', name: 'Asid Kuat', effect: 'Bahaya Kakisan (Kos +1)' },
+  { max: 4.0, color: '#F97316', name: 'Asid Sederhana', effect: 'Ketidakstabilan (-1 E/giliran)' },
+  { max: 6.0, color: '#EAB308', name: 'Asid Lemah', effect: 'Sedikit Berasid' },
+  { max: 8.0, color: '#22C55E', name: 'Neutral', effect: 'Keseimbangan (+1 E, +1 M)' },
+  { max: 10.0, color: '#3B82F6', name: 'Bes Lemah', effect: 'Sedikit Beralkali' },
+  { max: 12.0, color: '#6366F1', name: 'Bes Sederhana', effect: 'Ketidakstabilan Alkali' },
+  { max: 14.0, color: '#A855F7', name: 'Bes Kuat', effect: 'Bahaya Kaustik (Lawan +1 Kad)' },
+];
+
+const elementCards: Card[] = [
+  { id: 'el-h', name: 'Hidrogen', symbol: 'H', type: 'Element', formula: 'H', description: 'Unsur asas asid.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Biasa', scientificJustification: 'Hidrogen (H⁺) adalah ion yang mentakrifkan sifat asid menurut teori Arrhenius.' },
+  { id: 'el-o', name: 'Oksigen', symbol: 'O', type: 'Element', formula: 'O', description: 'Unsur asas bes.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Biasa', scientificJustification: 'Oksigen bergabung dengan H membentuk OH⁻.' },
+  { id: 'el-c', name: 'Karbon', symbol: 'C', type: 'Element', formula: 'C', description: 'Asas asid organik.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Biasa', scientificJustification: 'Karbon membentuk rangka asid organik seperti asid asetik (CH₃COOH).' },
+  { id: 'el-na', name: 'Natrium', symbol: 'Na', type: 'Element', formula: 'Na', description: 'Logam alkali.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Tidak Biasa', scientificJustification: 'Natrium adalah logam alkali yang membentuk bes kuat NaOH.' },
+  { id: 'el-cl', name: 'Klorin', symbol: 'Cl', type: 'Element', formula: 'Cl', description: 'Halogen.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Tidak Biasa', scientificJustification: 'Klorin membentuk Asid Hidroklorik (HCl) apabila bergabung dengan Hidrogen.' },
+  { id: 'el-s', name: 'Sulfur', symbol: 'S', type: 'Element', formula: 'S', description: 'Asas sulfat.', eCost: 2, mCost: 0, power: 0, tier: 1, rarity: 'Langka', scientificJustification: 'Sulfur adalah komponen kritikal dalam Asid Sulfurik (H₂SO₄), yang merupakan asid diprotik.' },
+  { id: 'el-n', name: 'Nitrogen', symbol: 'N', type: 'Element', formula: 'N', description: 'Asas Ammonia.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Tidak Biasa', scientificJustification: 'Nitrogen adalah gas lengai yang penting untuk penghasilan Ammonia (NH₃).' },
+  { id: 'el-mg', name: 'Magnesium', symbol: 'Mg', type: 'Element', formula: 'Mg', description: 'Logam alkali bumi.', eCost: 1, mCost: 0, power: 0, tier: 1, rarity: 'Biasa', scientificJustification: 'Magnesium hidroksida digunakan sebagai antasid.' },
+];
+
+const sintesisCards: Card[] = [
+  {
+    id: 'sin-hcl', name: 'Asid Hidroklorik', type: 'Sintesis', sintesisType: 'Asid', formula: 'HCl',
+    description: 'Asid kuat. 150 Damage.', effect: 'Berikan 150 kerosakan.',
+    eCost: 3, mCost: 2, power: 150, tier: 2, rarity: 'Biasa', pH: 1.0,
+    scientificJustification: 'Asid kuat monoprotik. Mengion sepenuhnya dalam air menghasilkan kepekatan ion H⁺ yang tinggi.',
+    molecularStructure: 'Molekul linear ringkas (H-Cl) dengan ikatan kovalen kutub.',
+    dailyUsage: 'Digunakan dalam pencuci tandas, pemprosesan keluli, dan jus gastrik dalam perut manusia.',
+    requirements: [{ element: 'H', count: 1 }, { element: 'Cl', count: 1 }]
+  },
+  {
+    id: 'sin-naoh', name: 'Natrium Hidroksida', type: 'Sintesis', sintesisType: 'Bes', formula: 'NaOH',
+    description: 'Alkali kuat. Pulih 150 HP.', effect: 'Pulihkan 150 HP.',
+    eCost: 3, mCost: 2, power: 150, tier: 2, rarity: 'Biasa', pH: 14.0,
+    scientificJustification: 'Alkali kuat. Mengion sepenuhnya menghasilkan ion OH⁻.',
+    molecularStructure: 'Struktur kekisi ionik kristal (Na⁺ dan OH⁻).',
+    dailyUsage: 'Dikenali sebagai soda kaustik. Digunakan dalam pembuatan sabun, pembersih longkang, dan pemprosesan kertas.',
+    requirements: [{ element: 'Na', count: 1 }, { element: 'O', count: 1 }, { element: 'H', count: 1 }]
+  },
+  {
+    id: 'sin-h2so4', name: 'Asid Sulfurik', type: 'Sintesis', sintesisType: 'Asid', formula: 'H₂SO₄',
+    description: 'Asid diprotik kuat. 250 Damage.', effect: 'Berikan 250 kerosakan.',
+    eCost: 4, mCost: 4, power: 250, tier: 3, rarity: 'Langka', pH: 0.5,
+    scientificJustification: 'Asid kuat diprotik. Formula: 2H, 1S, 4O. Ejen penyahhidratan yang kuat.',
+    molecularStructure: 'Geometri tetrahedron di sekeliling atom Sulfur pusat.',
+    dailyUsage: 'Elektrolit dalam bateri kereta asid-plumbum, pembuatan baja, dan penapisan minyak.',
+    requirements: [{ element: 'H', count: 2 }, { element: 'S', count: 1 }, { element: 'O', count: 4 }]
+  },
+  {
+    id: 'sin-nh3', name: 'Ammonia', type: 'Sintesis', sintesisType: 'Bes', formula: 'NH₃',
+    description: 'Bes lemah. Pulih 80 HP.', effect: 'Pulih 80 HP.',
+    eCost: 2, mCost: 2, power: 80, pH: 11.6, rarity: 'Tidak Biasa',
+    scientificJustification: 'Bes lemah. Menerima proton (H⁺) untuk membentuk ion ammonium (NH₄⁺).',
+    molecularStructure: 'Bentuk piramid trigonal dengan pasangan elektron menyendiri pada Nitrogen.',
+    dailyUsage: 'Bahan utama dalam baja (urea), bahan pencuci kaca, dan penyejuk.',
+    requirements: [{ element: 'N', count: 1 }, { element: 'H', count: 3 }]
+  },
+  {
+    id: 'sin-ch3cooh', name: 'Asid Etanoik', type: 'Sintesis', sintesisType: 'Asid', formula: 'CH₃COOH',
+    description: 'Asid lemah. 80 DMG + Poison.', effect: 'Serangan 80 DMG.',
+    eCost: 2, mCost: 3, power: 80, tier: 1, rarity: 'Biasa', pH: 3.0,
+    scientificJustification: 'Asid karboksilik lemah. Hanya sebahagian kecil molekul mengion dalam air.',
+    molecularStructure: 'Mengandungi kumpulan berfungsi karboksil (-COOH).',
+    dailyUsage: 'Komponen utama cuka makan (dicairkan), pengawet makanan, dan pembuatan polimer.',
+    requirements: [{ element: 'C', count: 2 }, { element: 'O', count: 2 }, { element: 'H', count: 4 }]
+  },
+  {
+    id: 'sin-mgoh2', name: 'Magnesium Hidroksida', type: 'Sintesis', sintesisType: 'Bes', formula: 'Mg(OH)₂',
+    description: 'Antasid. Pulih 100 HP.', effect: 'Pulihkan 100 HP.',
+    eCost: 2, mCost: 3, power: 100, tier: 1, rarity: 'Biasa', pH: 10.5,
+    scientificJustification: 'Bes lemah dengan keterlarutan rendah dalam air.',
+    molecularStructure: 'Struktur lapisan heksagon kristal (Brucite).',
+    dailyUsage: 'Digunakan sebagai "Susu Magnesia" untuk merawat sakit perut (antasid) dan sembelit.',
+    requirements: [{ element: 'Mg', count: 1 }, { element: 'O', count: 2 }, { element: 'H', count: 2 }]
+  },
+];
+
+const garamCards: Card[] = [
+  {
+    id: 'salt-nacl', name: 'Natrium Klorida', type: 'Garam', formula: 'NaCl',
+    description: 'Garam Dapur. Ambil 1 kad.', effect: 'Ambil 1 kad.',
+    eCost: 0, mCost: 0, power: 0, tier: 1, rarity: 'Biasa',
+    scientificJustification: 'Garam neutral yang terhasil daripada peneutralan Asid Kuat (HCl) dan Bes Kuat (NaOH).',
+    molecularStructure: 'Kekisi kristal ionik padu berpusat muka.',
+    dailyUsage: 'Garam masakan, pengawet makanan, dan de-icing jalan raya.',
+    source: 'HCl + NaOH'
+  },
+];
+
+const tacticalCards: Card[] = [
+  { id: 'tac-cat', name: 'Mangkin', type: 'Taktikal', description: 'Tukar 2M -> 3E', eCost: 0, mCost: 0, power: 0, rarity: 'Tidak Biasa', scientificJustification: 'Mempercepatkan kadar tindak balas tanpa digunakan.' },
+  { id: 'tac-trap', name: 'Penimbal (Trap)', type: 'Trap', description: 'Menghalang serangan asid.', eCost: 1, mCost: 1, power: 0, rarity: 'Langka', scientificJustification: 'Larutan yang menentang perubahan pH apabila asid/bes ditambah.' }
+];
+
+// --- 3. ENGINE LOGIC ---
+
+function getPHDetails(pH: number) {
+  const clampedPH = Math.max(0.01, Math.min(14, pH));
+  const hPlus = Math.pow(10, -clampedPH);
+  const ohMinus = Math.pow(10, -(14 - clampedPH));
+  const category = PH_COLOR_MAP.find(c => clampedPH <= c.max) || PH_COLOR_MAP[PH_COLOR_MAP.length - 1];
+  const formatConc = (c: number) => c >= 0.01 ? c.toFixed(3) : c.toExponential(1);
+  return {
+    clampedPH: clampedPH.toFixed(1),
+    color: category.color,
+    name: category.name,
+    effect: category.effect,
+    hPlus: formatConc(hPlus) + ' M',
+    ohMinus: formatConc(ohMinus) + ' M',
+  };
+}
+
+function createDeck(): Card[] {
+  const deck: Card[] = [];
+  // Hydrogen at 6 copies
+  for(let i=0; i<6; i++) deck.push({...elementCards[0], id: `H-${Math.random()}`});
+  for(let i=0; i<6; i++) deck.push({...elementCards[1], id: `O-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...elementCards[2], id: `C-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...elementCards[3], id: `Na-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...elementCards[4], id: `Cl-${Math.random()}`});
+  for(let i=0; i<2; i++) deck.push({...elementCards[5], id: `S-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...elementCards[6], id: `N-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...elementCards[7], id: `Mg-${Math.random()}`});
+  for(let i=0; i<3; i++) deck.push({...tacticalCards[0], id: `Tac-${Math.random()}`});
+  for(let i=0; i<2; i++) deck.push({...tacticalCards[1], id: `Trap-${Math.random()}`});
+  return deck.sort(() => Math.random() - 0.5);
+}
+
+function initializeGame(p1Name: string, p2Name: string): GameState {
+  const p1Deck = createDeck();
+  const p2Deck = createDeck();
+  const player1: Player = {
+    id: 'player1', name: p1Name || 'Pemain 1', hp: 1000, maxHP: 1000,
+    currentE: 5, maxE: 10, currentM: 15, maxM: 20,
+    hand: [], makmal: [], synthesisZone: [], bukuFormula: [...sintesisCards],
+    timbunanBuang: [], statusEffects: [], deck: p1Deck, trapSlot: null
+  };
+  const player2: Player = {
+    id: 'player2', name: p2Name || 'Pemain 2', hp: 1000, maxHP: 1000,
+    currentE: 5, maxE: 10, currentM: 15, maxM: 20,
+    hand: [], makmal: [], synthesisZone: [], bukuFormula: [...sintesisCards],
+    timbunanBuang: [], statusEffects: [], deck: p2Deck, trapSlot: null
+  };
+  // Initial Draw 7
+  for(let i=0; i<7; i++) {
+    if(player1.deck.length) player1.hand.push(player1.deck.pop()!);
+    if(player2.deck.length) player2.hand.push(player2.deck.pop()!);
+  }
+  return {
+    currentPlayer: 'player1', player1, player2,
+    turnNumber: 1, gameLog: ['Permainan bermula!', `Giliran ${player1.name}`], activeVisualEffects: [], makmalPH: 7.0
+  };
+}
+
+// --- 4. KOMPONEN UI ---
+
+function Button({ children, onClick, variant = 'primary', className = '', disabled = false }: any) {
+  const variants: any = {
+    primary: "bg-blue-600 hover:bg-blue-700 text-white shadow-lg",
+    danger: "bg-red-600 hover:bg-red-700 text-white",
+    success: "bg-green-600 hover:bg-green-700 text-white shadow-lg",
+    outline: "border-2 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white"
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant] || variants.primary} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
+function QuickPopup({ message, type, onClose }: any) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 2000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+  const colors: any = {
+    success: 'bg-green-600 border-green-500', error: 'bg-red-600 border-red-500', info: 'bg-blue-600 border-blue-500'
+  };
+  return (
+    <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-full text-white font-bold shadow-xl border ${colors[type] || colors.info} animate-in slide-in-from-top-4 fade-in duration-300`}>
+      {message}
+    </div>
+  );
+}
+
+function ActionLog({ actions }: { actions: string[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [actions]);
+  return (
+    <div className="bg-black/40 rounded-xl p-3 h-40 overflow-y-auto border border-slate-800 font-mono text-xs space-y-1 scrollbar-thin" ref={scrollRef}>
+       {actions.map((log: string, i: number) => (
+        <div key={i} className="text-slate-300 flex gap-2">
+           <span className="text-slate-600">[{i + 1}]</span>
+           <span>{log}</span>
+        </div>
+     ))}
+  </div>
+  );
+}
+
+function HPBar({ current, max, name, isOpponent, energy, mass }: any) {
+  const [currentHP, setCurrentHP] = useState(current);
+  useEffect(() => { setCurrentHP(current); }, [current]);
+  return (
+    <div className={`p-3 rounded-xl border ${isOpponent ? 'bg-red-950/30 border-red-900/50' : 'bg-blue-950/30 border-blue-900/50'}`}>
+      <div className="flex justify-between items-center mb-2">
+        <div className="flex items-center gap-2">
+          {isOpponent ? <EyeOff className="w-4 h-4 text-red-400"/> : <Eye className="w-4 h-4 text-blue-400"/>}
+          <span className="font-bold text-white">{name}</span>
+        </div>
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <div className="flex items-center text-yellow-400"><Zap className="w-3 h-3 mr-1" /> {isOpponent ? '?' : energy}</div>
+          <div className="flex items-center text-blue-400"><Beaker className="w-3 h-3 mr-1" /> {isOpponent ? '?' : mass}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Heart className="w-5 h-5 text-green-500" />
+        <div className="flex-1 h-4 bg-slate-800 rounded-full overflow-hidden relative border border-slate-700">
+          <div className="h-full bg-green-600 transition-all duration-500" style={{ width: `${Math.max(0, Math.min(100, (current / max) * 100))}%` }} />
+          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">{current}/{max}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PHMeterComponent({ makmalPH }: { makmalPH: number }) {
+  const details = useMemo(() => getPHDetails(makmalPH), [makmalPH]);
+  const percent = (makmalPH / 14) * 100;
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-lg border border-slate-200 text-slate-800">
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="font-bold flex items-center gap-2 text-indigo-700"><Activity className="w-5 h-5"/> Meter pH Makmal</h3>
+        <span className="text-xl font-black" style={{ color: details.color }}>pH {details.clampedPH}</span>
+      </div>
+      <div className="relative h-6 w-full rounded-full overflow-hidden border border-slate-300 mb-2">
+        <div className="absolute inset-0 w-full h-full flex">
+          {PH_COLOR_MAP.map((seg, i) => (<div key={i} style={{ backgroundColor: seg.color, flex: 1 }} />))}
+        </div>
+        <div className="absolute top-0 bottom-0 w-1 bg-black border-x border-white transition-all duration-500" style={{ left: `${percent}%` }} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-100 p-2 rounded border border-slate-200">
+        <div>[H⁺]: <span className="font-bold text-red-600">{details.hPlus}</span></div>
+        <div className="text-right">[OH⁻]: <span className="font-bold text-blue-600">{details.ohMinus}</span></div>
+      </div>
+      <div className="mt-2 text-xs bg-indigo-50 text-indigo-800 p-2 rounded border border-indigo-200 flex items-center gap-2">
+        <Lightbulb className="w-4 h-4 flex-shrink-0"/><span>{details.effect}</span>
+      </div>
+    </div>
+  );
+}
+
+function DraggableCard({ card, index, source, onMoveToHand, isSelected, onClick, playerE = 0, playerM = 0 }: any) {
+  const [isDragging, setIsDragging] = useState(false);
+  const isAffordable = (playerE >= card.eCost && playerM >= (card.mCost || 0));
+  const opacityClass = (source === 'hand' && !isAffordable) ? 'opacity-50 grayscale' : 'opacity-100';
+
+  const getTypeColor = () => {
+    switch (card.type) {
+      case 'Element': return 'border-amber-500 bg-amber-950/80';
+      case 'Taktikal': return 'border-blue-500 bg-blue-950/80';
+      case 'Trap': return 'border-yellow-500 bg-yellow-950/80';
+      case 'Sintesis': return 'border-purple-500 bg-purple-950/80';
+      default: return 'border-slate-500 bg-slate-900';
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent) => {
+    setIsDragging(true);
+    e.dataTransfer.setData('application/json', JSON.stringify({ type: 'card', card, source, index }));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const isDraggable = (card.type === 'Element' && source === 'hand') || (card.type === 'Taktikal' && source === 'hand') || (source === 'synthesisZone') || (card.type === 'Trap' && source === 'hand') || (card.type === 'Sintesis' && source === 'hand');
+
+  return (
+    <div
+      draggable={isDraggable}
+      onDragStart={handleDragStart}
+      onDragEnd={() => setIsDragging(false)}
+      onDoubleClick={() => onMoveToHand && onMoveToHand(index)}
+      onClick={onClick}
+      className={`relative w-24 h-36 rounded-lg border-2 p-2 flex flex-col justify-between select-none cursor-grab active:cursor-grabbing transition-all hover:scale-105 shadow-lg ${getTypeColor()} ${opacityClass} ${isDragging ? 'opacity-0' : ''}`}
+    >
+      <div className="flex justify-between items-start">
+        <h3 className="text-[10px] font-bold leading-tight text-white truncate w-14 m-0">{card.name}</h3>
+        <div className="flex flex-col items-end gap-0.5">
+           <span className="text-[9px] font-mono bg-black/40 px-1 rounded text-yellow-400">{card.eCost}E</span>
+        </div>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center">
+        <span className="text-3xl font-black text-white/20 font-mono">{card.symbol || '?'}</span>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-[8px] text-gray-300 line-clamp-2 leading-tight m-0">{card.description}</p>
+        <div className="flex justify-between items-center pt-1 border-t border-white/10">
+           <span className="text-[8px] text-white bg-white/10 px-1 rounded">{card.type}</span>
+           {card.mCost ? <span className="text-[8px] text-blue-300">{card.mCost}M</span> : null}
+        </div>
+      </div>
+
+      {source === 'synthesisZone' && (
+        <div className="absolute -top-2 -right-2 z-20 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-lg hover:bg-red-600 hover:scale-110 transition-all"
+          onClick={(e) => { e.stopPropagation(); if(onMoveToHand) onMoveToHand(index); }}>
+           <X className="w-3 h-3"/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SynthesisZone({ cards, availableSynthesis, onDrop, onClear, onSynthesize, currentE, currentM, onMoveCardToHand }: any) {
+  const [isDragOver, setIsDragOver] = useState(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (data.type === 'card' && data.card.type === 'Element' && data.source === 'hand') {
+        onDrop(data.card, data.source, data.index);
+      }
+    } catch (err) { console.error(err); }
+  };
+  const safeHandleDrop = (e: React.DragEvent) => {
+     e.preventDefault();
+     setIsDragOver(false);
+     try {
+        const data = JSON.parse(e.dataTransfer.getData('application/json'));
+        if (data.card.type === 'Element') {
+           onDrop(data.card, data.source, data.index);
+        }
+     } catch(err) {}
+  };
+  return (
+    <div className={`bg-slate-900/80 border-2 border-dashed rounded-xl p-4 transition-all flex flex-col gap-4 min-h-[250px] ${isDragOver ? 'border-green-400 bg-green-900/20' : 'border-slate-600'}`}
+      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} onDrop={safeHandleDrop}>
+      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 className="font-bold text-purple-300 flex items-center gap-2"><FlaskConical className="w-4 h-4"/> Kebuk Sintesis</h3>
+        {cards.length > 0 && (<button onClick={onClear} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><X className="w-3 h-3"/> Reset</button>)}
+      </div>
+      <div className="flex-1 flex flex-wrap content-start gap-2 z-10 min-h-[150px]">
+        {cards.length === 0 && (
+            <div className="w-full h-32 flex flex-col items-center justify-center text-slate-600 animate-pulse">
+               <ArrowDownToLine className="w-8 h-8 mb-2 opacity-50"/>
+               <p className="text-sm">Seret kad Elemen ke sini</p>
+               <p className="text-[10px]">Satu kad setiap elemen</p>
+            </div>
+         )}
+        {cards.map((card: Card, i: number) => (
+           <div key={i} className="relative group">
+              <DraggableCard card={card} index={i} source="synthesisZone" onMoveToHand={onMoveCardToHand} playerE={99} playerM={99} />
+           </div>
+        ))}
+      </div>
+      <div className="z-10 space-y-2">
+         {availableSynthesis.length > 0 ? (
+           availableSynthesis.map((recipe: any) => {
+              const moleCost = recipe.moleCost;
+              const energyCost = recipe.card.eCost;
+              const canAfford = currentE >= energyCost && currentM >= moleCost;
+              return (
+                <Button key={recipe.card.id} onClick={() => canAfford && onSynthesize(recipe.card, recipe.moleCost)} disabled={!canAfford} variant={canAfford ? 'success' : 'outline'} className="w-full justify-between">
+                   <span className="font-bold text-sm">{recipe.card.name}</span>
+                   <div className="flex gap-2 text-xs font-mono"><span>{energyCost}E</span><span>{moleCost}M</span></div>
+                </Button>
+              );
+           })
+         ) : (
+            cards.length > 0 && <div className="text-center text-xs text-slate-500">Tiada resipi sah ditemui.</div>
+         )}
+      </div>
+    </div>
+  );
+}
+
+function DefenseSlot({ trapCard, onDrop }: any) {
+  const [isOver, setIsOver] = useState(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsOver(false);
+    try {
+       const data = JSON.parse(e.dataTransfer.getData('application/json'));
+       if (data.card.type === 'Trap') onDrop(data.card, data.source, data.index);
+    } catch(err) {}
+  };
+  return (
+     <div className={`w-full h-24 border-2 border-dashed rounded-xl flex items-center justify-center relative overflow-hidden transition-colors ${isOver ? 'border-yellow-400 bg-yellow-900/20' : 'border-slate-700 bg-slate-900/50'}`}
+       onDragOver={(e) => { e.preventDefault(); setIsOver(true); }} onDragLeave={() => setIsOver(false)} onDrop={handleDrop}>
+        {trapCard ? (
+           <div className="w-full h-full bg-yellow-900/40 flex items-center justify-center text-yellow-400 font-bold border-2 border-yellow-600 rounded-xl animate-pulse flex-col">
+               <Shield className="w-6 h-6 mr-2" /> 
+               <span className="text-xs">{trapCard.name}</span>
+               <span className="text-[9px]">AKTIF</span>
+           </div>
+        ) : (
+           <div className="text-slate-600 text-xs flex flex-col items-center"><Shield className="w-6 h-6 mb-1" /><span>Slot Pertahanan</span><span className="text-[9px]">(Letak Kad Perangkap)</span></div>
+        )}
+     </div>
+  );
+}
+
+function RecyclingZone({ onDrop }: any) {
+  const [isOver, setIsOver] = useState(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsOver(false);
+    try {
+       const data = JSON.parse(e.dataTransfer.getData('application/json'));
+       if (data.source === 'hand') {
+         onDrop(data.card, data.source, data.index);
+       }
+    } catch(err) {}
+  };
+  return (
+     <div className={`w-full h-24 border-2 border-dashed rounded-xl flex items-center justify-center relative overflow-hidden transition-colors mt-2 ${isOver ? 'border-green-400 bg-green-900/20' : 'border-slate-700 bg-slate-900/50'}`}
+       onDragOver={(e) => { e.preventDefault(); setIsOver(true); }} onDragLeave={() => setIsOver(false)} onDrop={handleDrop}>
+         <div className="text-slate-500 text-xs flex flex-col items-center"><Recycle className="w-6 h-6 mb-1 text-green-500" /><span>Mesin Kitar Semula</span><span className="text-[9px]">(Buang Kad = Dapat Tenaga)</span></div>
+     </div>
+  );
+}
+
+// KOMPONEN PERPUSTAKAAN YANG DIKEMAS KINI
+function Perpustakaan({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'Asid' | 'Bes' | 'Garam'>('Asid');
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+
+  const cardsToShow = sintesisCards.filter(c => c.sintesisType === tab);
+  if (tab === 'Garam') {
+     // Garam
+     cardsToShow.length = 0; 
+     cardsToShow.push(...garamCards);
+  }
+
+  // Paparan Perincian (Detail View)
+  if (selectedCard) {
+    return (
+       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={onClose}>
+         <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col overflow-hidden p-6" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedCard(null)} className="mb-4 flex items-center text-slate-400 hover:text-white">
+               <ArrowLeft className="w-5 h-5 mr-2" /> Kembali ke Senarai
+            </button>
+            
+            <div className="flex-1 flex flex-col md:flex-row gap-6">
+               {/* Card Image Placeholder */}
+               <div className="w-full md:w-1/3 flex flex-col items-center">
+                  <div className="w-full h-64 rounded-xl border-4 border-slate-700 bg-slate-800 flex items-center justify-center relative overflow-hidden shadow-2xl">
+                     <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                     <div className="text-center">
+                        <div className="text-6xl font-black text-white/20 mb-2">{selectedCard.symbol || selectedCard.formula}</div>
+                        <div className="text-xs text-slate-500">{selectedCard.type}</div>
+                     </div>
+                  </div>
+                  <h2 className="text-2xl font-bold text-white mt-4 text-center">{selectedCard.name}</h2>
+                  <div className="text-purple-400 font-mono mt-1">{selectedCard.formula}</div>
+               </div>
+
+               {/* Card Details */}
+               <div className="flex-1 space-y-6 overflow-y-auto pr-2">
+                  <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                     <h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Maklumat Asas</h3>
+                     <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div><span className="text-slate-500">Jenis:</span> <span className="text-white">{selectedCard.sintesisType || selectedCard.type}</span></div>
+                        <div><span className="text-slate-500">pH:</span> <span className="text-white">{selectedCard.pH || 'N/A'}</span></div>
+                        <div><span className="text-slate-500">Kos:</span> <span className="text-yellow-400">{selectedCard.eCost}E</span> / <span className="text-blue-400">{selectedCard.mCost}M</span></div>
+                        <div><span className="text-slate-500">Kesan:</span> <span className="text-green-400 font-bold">{selectedCard.power ? `${selectedCard.power} Pwr` : 'N/A'}</span></div>
+                     </div>
+                  </div>
+
+                  <div className="space-y-3">
+                     <div>
+                        <h3 className="text-sm font-bold text-blue-400 flex items-center gap-2"><Atom className="w-4 h-4" /> Struktur Molekul </h3>
+                        <p className="text-sm text-slate-300 mt-1 leading-relaxed">{selectedCard.molecularStructure || "Maklumat struktur belum tersedia."}</p>
+                     </div>
+                     
+                     <div>
+                        <h3 className="text-sm font-bold text-green-400 flex items-center gap-2"><Activity className="w-4 h-4" /> Kegunaan Harian</h3>
+                        <p className="text-sm text-slate-300 mt-1 leading-relaxed">{selectedCard.dailyUsage || "Maklumat kegunaan belum tersedia."}</p>
+                     </div>
+
+                     <div>
+                        <h3 className="text-sm font-bold text-purple-400 flex items-center gap-2"><Microscope className="w-4 h-4" /> Fakta Saintifik</h3>
+                        <p className="text-sm text-slate-300 mt-1 italic leading-relaxed">"{selectedCard.scientificJustification}"</p>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
+       </div>
+    );
+  }
+
+  // Paparan Galeri (Simplified View)
+  const renderSimplifiedCard = (card: Card) => (
+     <div 
+        key={card.id} 
+        onClick={() => setSelectedCard(card)}
+        className="cursor-pointer bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-500 rounded-xl p-4 transition-all flex flex-col items-center text-center group"
+     >
+        <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+           <span className="font-bold text-white text-xs">{card.symbol || "C"}</span>
+        </div>
+        <h4 className="text-sm font-bold text-white group-hover:text-blue-400">{card.name}</h4>
+        <p className="text-[10px] text-slate-500 mt-1 font-mono">{card.formula}</p>
+     </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={onClose}>
+       <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+             <h2 className="text-2xl font-bold text-blue-400 flex items-center gap-2"><BookOpen className="w-6 h-6" /> Perpustakaan Kimia</h2>
+             <Button variant="outline" onClick={onClose}><X className="w-4 h-4"/></Button>
+          </div>
+          
+          <div className="flex border-b border-slate-800 bg-slate-950">
+             {['Asid', 'Bes', 'Garam'].map(t => (
+                <button 
+                   key={t} 
+                   onClick={() => setTab(t as any)}
+                   className={`flex-1 py-4 font-bold text-sm uppercase tracking-wider ${tab === t ? 'bg-slate-800 text-blue-400 border-b-2 border-blue-500' : 'text-slate-500 hover:text-white'}`}
+                >
+                   {t}
+                </button>
+             ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6">
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {cardsToShow.map(renderSimplifiedCard)}
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+}
+
+function AskChemistModal({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [response, setResponse] = useState('');
+  const [loading, setLoading] = useState(false);
+  const callGeminiApi = async (userQuery: string) => {
+    setLoading(true); setResponse('');
+    setTimeout(() => { setResponse(`Ini adalah simulasi jawapan untuk: "${userQuery}".`); setLoading(false); }, 1000);
+  };
+  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (query.trim()) callGeminiApi(query.trim()); };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={onClose}>
+       <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+             <h2 className="text-xl font-bold text-yellow-400 flex items-center gap-2"><Lightbulb className="w-5 h-5" /> Tanya Ahli Kimia ✨</h2>
+             <Button variant="outline" onClick={onClose}><X className="w-4 h-4"/></Button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-4 flex gap-2"><input type="text" value={query} onChange={(e) => setQuery(e.target.value)} className="flex-1 p-2 rounded bg-slate-800 text-white" placeholder="Contoh: Apakah itu Asid Sulfurik?" /><Button type="submit" disabled={loading}>{loading ? '...' : 'Tanya'}</Button></form>
+          <div className="flex-1 overflow-y-auto p-4 text-slate-300">{response || "Sila ajukan soalan."}</div>
+       </div>
+    </div>
+  );
+}
+
+// --- 5. MAIN APP ---
+
+function App() {
+  const [game, setGame] = useState<GameState | null>(null);
+  const [currentVisual, setCurrentVisual] = useState<any>(null);
+  const [quickMsg, setQuickMsg] = useState<any>(null);
+  const [isDraggingHand, setIsDraggingHand] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [showChemist, setShowChemist] = useState(false);
+  const [p1Name, setP1Name] = useState('');
+  const [p2Name, setP2Name] = useState('');
+
+  const startGame = () => {
+     if (!p1Name || !p2Name) {
+        alert("Sila masukkan nama kedua-dua pemain!");
+        return;
+     }
+     setGame(initializeGame(p1Name, p2Name));
+     setQuickMsg({message: "Permainan Bermula!", type: 'info'});
+  };
+
+  const handleDropOnSynthesis = (card: Card, source: string, index: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     if (activePlayer.synthesisZone.some(c => c.symbol === card.symbol)) {
+        setQuickMsg({message: "Elemen ini sudah ada!", type: 'error'});
+        return;
+     }
+     if (source === 'hand') {
+        activePlayer.synthesisZone.push(card);
+        activePlayer.hand.splice(index, 1);
+        setGame(newState);
+     }
+  };
+
+  const handleMoveCardToHand = (index: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     const card = activePlayer.synthesisZone[index];
+     activePlayer.synthesisZone.splice(index, 1);
+     activePlayer.hand.push(card);
+     setGame(newState);
+  };
+
+  const handleDropDefense = (card: Card, source: string, index: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     if (activePlayer.trapSlot) {
+        setQuickMsg({message: "Slot pertahanan penuh!", type: 'error'});
+        return;
+     }
+     activePlayer.trapSlot = card;
+     activePlayer.hand.splice(index, 1);
+     setGame(newState);
+     setQuickMsg({message: "Perangkap dipasang!", type: 'success'});
+  };
+
+  // Handler untuk mesin kitar semula
+  const handleRecycleDrop = (card: Card, source: string, index: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     let energyGain = 1;
+     if (card.rarity === 'Tidak Biasa') energyGain = 2;
+     if (card.rarity === 'Langka') energyGain = 3;
+     activePlayer.currentE += energyGain;
+     activePlayer.hand.splice(index, 1);
+     activePlayer.timbunanBuang.push(card);
+     setGame(newState);
+     setQuickMsg({message: `Kitar Semula: ${card.name} -> +${energyGain}E`, type: 'success'});
+  };
+
+  const handleSynthesize = (recipe: Card, moleCost: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     activePlayer.currentE -= recipe.eCost;
+     activePlayer.currentM -= moleCost;
+     activePlayer.timbunanBuang.push(...activePlayer.synthesisZone);
+     activePlayer.synthesisZone = [];
+     
+     const productCard = { ...recipe, id: `prod-${Date.now()}` };
+     activePlayer.hand.push(productCard);
+
+     newState.gameLog.unshift(`Sintesis Berjaya: ${productCard.name} ditambah ke tangan ${activePlayer.name}.`);
+     setGame(newState);
+     setCurrentVisual({ description: `SINTESIS BERJAYA: ${recipe.name}`, type: 'synthesis' });
+     setTimeout(() => setCurrentVisual(null), 2000);
+  };
+
+  const handleClearZone = () => {
+    if (!game) return;
+    const newState = { ...game };
+    const activePlayer = newState[newState.currentPlayer];
+    activePlayer.hand.push(...activePlayer.synthesisZone);
+    activePlayer.synthesisZone = [];
+    setGame(newState);
+  };
+
+  const handlePlayProduct = (card: Card, source: string, index: number) => {
+     if (!game) return;
+     const newState = { ...game };
+     const activePlayer = newState[newState.currentPlayer];
+     const opponent = newState.currentPlayer === 'player1' ? newState.player2 : newState.player1;
+
+     if (activePlayer.currentE < 1) {
+         setQuickMsg({message: "Tak cukup tenaga untuk aktifkan produk! (Perlu 1E)", type: 'error'});
+         return;
+     }
+     activePlayer.currentE -= 1;
+     activePlayer.hand.splice(index, 1);
+     activePlayer.timbunanBuang.push(card);
+
+     // Trap check logic on Opponent
+     if (opponent.trapSlot && (opponent.trapSlot.type === 'Trap' || opponent.trapSlot.type === 'Sintesis')) {
+        setQuickMsg({message: `PERANGKAP ${opponent.trapSlot.name} DIAKTIFKAN! Serangan dipatahkan!`, type: 'success'});
+        newState.gameLog.unshift(`Serangan ${activePlayer.name} dipatahkan oleh perangkap ${opponent.name}!`);
+        opponent.timbunanBuang.push(opponent.trapSlot);
+        opponent.trapSlot = null;
+     } else {
+        // Attack goes through
+        if (card.sintesisType === 'Asid') {
+            const dmg = card.power || 0;
+            opponent.hp = Math.max(0, opponent.hp - dmg);
+            newState.makmalPH = Math.max(0, newState.makmalPH - (card.pH ? 7 - card.pH : 1));
+            newState.gameLog.unshift(`SERANGAN: ${card.name} -> ${dmg} DMG kepada ${opponent.name}`);
+        } else if (card.sintesisType === 'Bes') {
+            const heal = card.power || 0;
+            activePlayer.hp = Math.min(activePlayer.maxHP, activePlayer.hp + heal);
+            newState.makmalPH = Math.min(14, newState.makmalPH + (card.pH ? card.pH - 7 : 1));
+            newState.gameLog.unshift(`PEMULIHAN: ${card.name} -> +${heal} HP`);
+        }
+     }
+
+     if (opponent.hp <= 0) newState.winner = newState.currentPlayer;
+     setGame(newState);
+  };
+
+  const endTurn = () => {
+     if (!game) return;
+     const newState = { ...game };
+     const nextPlayerId = newState.currentPlayer === 'player1' ? 'player2' : 'player1';
+     const nextPlayer = newState[nextPlayerId];
+     
+     // Regen resources for NEXT player
+     nextPlayer.currentE = Math.min(nextPlayer.maxE, nextPlayer.currentE + 3);
+     nextPlayer.currentM = Math.min(nextPlayer.maxM, nextPlayer.currentM + 5);
+     
+     // Draw 1 normal card
+     if(nextPlayer.deck.length) nextPlayer.hand.push(nextPlayer.deck.pop()!);
+     
+     // EXTRA HYDROGEN RULE
+     const extraH = { ...elementCards[0], id: `H-extra-${Date.now()}` };
+     nextPlayer.hand.push(extraH);
+     
+     newState.currentPlayer = nextPlayerId;
+     newState.turnNumber++;
+     setGame(newState);
+     setQuickMsg({message: `Giliran ${nextPlayer.name}`, type: 'info'});
+  };
+
+  const handleDropOnHand = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingHand(false);
+    try {
+       const data = JSON.parse(e.dataTransfer.getData('application/json'));
+       if (data.source === 'synthesisZone') {
+          handleMoveCardToHand(data.index);
+       }
+    } catch(err) {}
+  };
+
+  if (!game) {
+     return (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 text-white font-sans">
+           <div className="max-w-md text-center space-y-6 w-full bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
+              <div className="flex justify-center"><FlaskConical className="w-24 h-24 text-blue-500 animate-bounce"/></div>
+              <h1 className="text-4xl font-black">KIMIA TCG</h1>
+              <p className="text-slate-400">Perang Asid-Bes: 2 Pemain</p>
+              
+              <div className="space-y-4 text-left">
+                <div>
+                   <label className="text-xs text-slate-500 uppercase font-bold">Nama Pemain 1</label>
+                   <div className="flex items-center bg-slate-800 rounded-lg mt-1 px-3 border border-slate-700">
+                      <Eye className="w-4 h-4 text-slate-400 mr-2"/>
+                      <input 
+                        type="text" 
+                        value={p1Name}
+                        onChange={(e) => setP1Name(e.target.value)}
+                        className="bg-transparent border-none text-white w-full py-2 focus:outline-none"
+                        placeholder="Masukkan nama..."
+                      />
+                   </div>
+                </div>
+                <div>
+                   <label className="text-xs text-slate-500 uppercase font-bold">Nama Pemain 2</label>
+                   <div className="flex items-center bg-slate-800 rounded-lg mt-1 px-3 border border-slate-700">
+                      <EyeOff className="w-4 h-4 text-slate-400 mr-2"/>
+                      <input 
+                        type="text" 
+                        value={p2Name}
+                        onChange={(e) => setP2Name(e.target.value)}
+                        className="bg-transparent border-none text-white w-full py-2 focus:outline-none"
+                        placeholder="Masukkan nama..."
+                      />
+                   </div>
+                </div>
+              </div>
+
+              <Button onClick={startGame} className="w-full py-4 text-lg mt-4">MULA PERMAINAN</Button>
+           </div>
+        </div>
+     );
+  }
+
+  if (game.winner) {
+     return (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
+           <div className="text-center">
+              <Trophy className="w-32 h-32 text-yellow-400 mx-auto mb-4"/>
+              <h1 className="text-5xl font-black mb-4">{game[game.winner].name} MENANG!</h1>
+              <Button onClick={() => setGame(null)}>Menu Utama</Button>
+           </div>
+        </div>
+     );
+  }
+
+  const activePlayer = game[game.currentPlayer];
+  const opponent = game.currentPlayer === 'player1' ? game.player2 : game.player1;
+
+  const zoneSymbols = activePlayer.synthesisZone.map(c => c.symbol);
+  const availableRecipes = sintesisCards.map(recipe => {
+     if (!recipe.requirements) return null;
+     const hasElements = recipe.requirements.every(req => zoneSymbols.includes(req.element));
+     if (hasElements) {
+        const moleCost = recipe.requirements.reduce((sum, req) => sum + req.count, 0);
+        return { card: recipe, moleCost };
+     }
+     return null;
+  }).filter(Boolean);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 flex flex-col font-sans overflow-hidden relative">
+       {currentVisual && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+             <div className="text-center animate-bounce transform scale-150">
+                <Heart className="w-20 h-20 text-green-500 mx-auto mb-4"/>
+                <h2 className="text-4xl font-black text-white text-shadow-lg">{currentVisual.description}</h2>
+             </div>
+          </div>
+       )}
+       {quickMsg && <QuickPopup message={quickMsg.message} type={quickMsg.type} onClose={() => setQuickMsg(null)} />}
+       {showLibrary && <Perpustakaan onClose={() => setShowLibrary(false)} />}
+       {showChemist && <AskChemistModal onClose={() => setShowChemist(false)} />}
+
+       <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-800 mb-4">
+          <div className="font-bold flex items-center gap-2 text-purple-400"><Beaker className="w-5 h-5"/> Pusingan: {game.turnNumber} <span className="text-slate-500 mx-2">|</span> Giliran: <span className="text-white">{activePlayer.name}</span></div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowLibrary(true)}>Perpustakaan</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowChemist(true)}>Tanya Ahli Kimia</Button>
+          </div>
+          <Button variant="danger" size="sm" onClick={endTurn}>TAMAT GILIRAN</Button>
+       </div>
+
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+          <div className="space-y-4">
+             <HPBar current={opponent.hp} max={opponent.maxHP} name={opponent.name} isOpponent={true} />
+             
+             <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 h-32 flex items-center justify-center text-slate-500 text-xs"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                      e.preventDefault();
+                      try {
+                        const data = JSON.parse(e.dataTransfer.getData('application/json'));
+                        if (data.card.type === 'Sintesis') {
+                             handlePlayProduct(data.card, data.source, data.index);
+                        } else {
+                             setQuickMsg({message: "Hanya kad Produk boleh menyerang!", type: 'error'});
+                        }
+                      } catch(err) {}
+                  }}
+             >
+                  <Target className="w-8 h-8 mb-2 text-slate-600"/>
+                  <p className="text-center">SERET PRODUK KE SINI (SERANG/PULIH) [1E]</p>
+             </div>
+
+             <HPBar current={activePlayer.hp} max={activePlayer.maxHP} name={activePlayer.name} energy={activePlayer.currentE} mass={activePlayer.currentM} />
+             
+             <div className="grid grid-cols-2 gap-2">
+                <DefenseSlot trapCard={activePlayer.trapSlot} onDrop={handleDropDefense} />
+                <RecyclingZone onDrop={handleRecycleDrop} />
+             </div>
+             
+             <Button onClick={() => setQuickMsg({message: "Simulasi Serangan Dimulakan", type: 'info'})} variant="outline" className="w-full mt-2"><Target className="w-4 h-4 mr-2"/> Uji Perangkap</Button>
+          </div>
+
+          <div className="flex flex-col gap-4">
+             <SynthesisZone 
+                cards={activePlayer.synthesisZone}
+                availableSynthesis={availableRecipes}
+                onDrop={handleDropOnSynthesis}
+                onClear={handleClearZone}
+                onSynthesize={handleSynthesize}
+                currentE={activePlayer.currentE}
+                currentM={activePlayer.currentM}
+                onMoveCardToHand={handleMoveCardToHand}
+             />
+          </div>
+
+          <div className="space-y-4 flex flex-col">
+             <PHMeterComponent makmalPH={game.makmalPH} />
+             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex-1 overflow-y-auto max-h-60">
+                <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Log Tindakan</h4>
+                {game.gameLog.map((l, i) => <div key={i} className="text-xs text-slate-300 mb-1 border-l-2 border-slate-700 pl-2">{l}</div>)}
+             </div>
+          </div>
+       </div>
+
+       <div className="mt-auto pt-4">
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl" 
+            onDragOver={(e) => { e.preventDefault(); setIsDraggingHand(true); }}
+            onDragLeave={() => setIsDraggingHand(false)}
+            onDrop={handleDropOnHand}
+          >
+             <h3 className="text-xs font-bold text-slate-500 mb-3 uppercase">Tangan {activePlayer.name} {isDraggingHand && <span className="text-green-400 ml-2 animate-pulse">LEPASKAN UNTUK SIMPAN</span>}</h3>
+             <div className="flex flex-wrap gap-2 justify-center">
+                {activePlayer.hand.map((card, i) => (
+                   <DraggableCard 
+                      key={card.id} card={card} index={i} source="hand" 
+                      playerE={activePlayer.currentE} playerM={activePlayer.currentM}
+                      onClick={() => {
+                        if(card.type === 'Taktikal') {
+                            const newState = {...game};
+                            const p = newState[newState.currentPlayer];
+                            if(p.currentE >= card.eCost) {
+                                p.currentE -= card.eCost;
+                                if(card.id.includes('tac-titration')) p.currentM = Math.max(0, p.currentM - 2) + 3;
+                                p.hand.splice(i, 1);
+                                newState.gameLog.unshift(`${card.name} digunakan!`);
+                                setGame(newState);
+                                setQuickMsg({message: "Taktikal Aktif", type: "info"});
+                            } else setQuickMsg({message: "Tak Cukup E", type: "error"});
+                        }
+                      }}
+                   />
+                ))}
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+}
+
+export default App;
         body {
             margin: 0;
             background-color: #202020; /* Dark background */
@@ -80,3 +1044,4 @@
     </script>
 </body>
 </html>
+
