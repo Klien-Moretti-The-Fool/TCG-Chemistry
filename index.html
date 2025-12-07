@@ -1,1 +1,82 @@
-<h1>SAYA BERJAYA</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My GitHub Game</title>
+    <style>
+        /* CSS: This makes the game look good */
+        body {
+            margin: 0;
+            background-color: #202020; /* Dark background */
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            background-color: #000000;
+            border: 4px solid #4CAF50; /* Green border to show it works */
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+        }
+
+        p {
+            margin-top: 10px;
+            color: #aaaaaa;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>System Status: ONLINE</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <p>Use Arrow Keys to move the square</p>
+
+    <script>
+        // JAVASCRIPT: The game logic
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game Variables
+        let x = canvas.width / 2;
+        let y = canvas.height / 2;
+        const speed = 5;
+        const size = 50;
+
+        // Input handling
+        let keys = {};
+        window.addEventListener('keydown', (e) => keys[e.key] = true);
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+        // The Game Loop (Runs 60 times a second)
+        function update() {
+            // 1. Update Logic
+            if (keys['ArrowUp']) y -= speed;
+            if (keys['ArrowDown']) y += speed;
+            if (keys['ArrowLeft']) x -= speed;
+            if (keys['ArrowRight']) x += speed;
+
+            // 2. Draw Everything
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear screen
+            
+            // Draw Player
+            ctx.fillStyle = '#4CAF50'; // Green color
+            ctx.fillRect(x - size/2, y - size/2, size, size);
+
+            // Draw Text
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Coordinates: X=${x}, Y=${y}`, 10, 30);
+
+            requestAnimationFrame(update); // Loop
+        }
+
+        // Start the game
+        update();
+    </script>
+</body>
+</html>
